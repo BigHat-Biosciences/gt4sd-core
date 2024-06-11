@@ -23,6 +23,7 @@
 #
 import inspect
 import logging
+from tqdm import tqdm
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -182,7 +183,7 @@ def prepare_datasets_from_files(
         properties.remove("text")
 
         # Parse data and create RT-compatible format
-        for j, row in df.iterrows():
+        for j, row in tqdm(df.iterrows()):
             line = "".join(
                 [
                     f"<{p}>{row[p]:.3f}{tokenizer.expression_separator}"

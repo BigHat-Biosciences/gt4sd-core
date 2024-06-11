@@ -27,6 +27,7 @@ import logging
 import os
 import shutil
 import tempfile
+from tqdm import tqdm
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -346,7 +347,7 @@ class RegressionTransformerTrainingPipeline(TrainingPipeline):
 
             # Write file
             with open(f_name, "w") as f:
-                for line in data:
+                for line in tqdm(data):
                     f.write(line + "\n")
 
             # Create dataset
