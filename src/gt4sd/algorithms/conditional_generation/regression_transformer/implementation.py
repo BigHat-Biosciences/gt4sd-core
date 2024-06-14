@@ -220,6 +220,7 @@ class ConditionalGenerator:
             float: Value in regular scale.
         """
         # If the property was not normalized, return the value
+        return x
         if not self.do_normalize[idx]:
             return x
 
@@ -413,12 +414,12 @@ class ConditionalGenerator:
         Args:
             context: a string with a masked property, a separator and an
                 entity. E.g. <stab>[MASK][MASK][MASK][MASK]|GSQEVNSGTQTYKNASPEEAERIARKAGATTWTEKGNKWEIRI.
-
+        
         Returns:
             List[Sequence]: a list of (denormalized) predicted properties for the entity.
                 Stored as a Sequence (str), e.g., '<qed>0.727'.
         """
-        logger.info(f"Starting prediction for sequence {context}")
+        # logger.info(f"Starting prediction for sequence {context}")
 
         # Prepare the batch
         inputs = self.collator([self.tokenizer(context)])
@@ -490,7 +491,7 @@ class ConditionalGenerator:
         # The property score has to be in the range understood by the model
         sequence = self.normalize_sequence(sequence)
 
-        logger.info(f"Starting prediction for sequence {sequence}")
+        # logger.info(f"Starting prediction for sequence {sequence}")
 
         # Prepare the batch
         tokens = self.tokenizer(sequence)
@@ -500,13 +501,16 @@ class ConditionalGenerator:
         # Forward pass
         outputs = self.model(map_tensor_dict(inputs, self.device))
         # Obtain model predictions via the search method
-        predictions = self.search(outputs["logits"].detach()).squeeze().cpu()
+        predictions = self.search(outputs["logits"].detach()).cpu()
         # Combine predictions with the static part to obtain the full sequences
         generations = input_ids.cpu()
         generations[generations == self.tokenizer.mask_token_id] = predictions[
             generations == self.tokenizer.mask_token_id
         ]
 
+        # Get rid of generated sequences that are invalid
+        # print(generations)
+        
         # Second part: Predict the properties of the just generated sequence
         try:
             _input = self.property_collator.mask_tokens(generations)
@@ -537,8 +541,7 @@ class ConditionalGenerator:
             for seq in generations
         ]
 
-        # Filter out all sequences that do not satisfy property constraints within
-        # tolerance range.
+        # Filter out all sequences that do not satisfy property constraints within tolerance range.
         logger.debug(f"Sequences {sequences}, properties: {properties}")
         property_successes: Tuple = tuple(
             filter(
@@ -558,7 +561,7 @@ class ConditionalGenerator:
 
         # filter out sequences that do not include desired substructures
         successes = self.filter_substructures(property_successes)  # type: ignore
-        logger.info(f"Successes: {successes}")
+        # logger.info(f"Successes: {successes}")
         return successes
 
     def normalize_sequence(self, context: Sequence) -> Sequence:
@@ -644,7 +647,9 @@ class ConditionalGenerator:
         context: str,
         property_goal: Dict[str, Any] = {},
         fraction_to_mask: float = 0.2,
+        masking_strategy: str = "fixed",
         tokens_to_mask: List = [],
+        bool_context_mask: Optional[List[bool]] = None,
         substructures_to_mask: List[str] = [],
         substructures_to_keep: List[str] = [],
         text_filtering: bool = False,
@@ -663,9 +668,15 @@ class ConditionalGenerator:
                {'<logp>': 1.23, '<synthesizability>': 2.34}
                 Defaults to {}, but it has to be specified.
             fraction_to_mask: The fraction of tokens that can be changed. Defaults to 0.2.
+            masking_strategy: The strategy to mask tokens. Either 'fixed' or 'stochastic'. In 'fixed'
+                mode, we round the number of tokens to mask to the nearest integer and always mask
+                the same number of tokens. In 'stochastic' mode, we sample the number of tokens to mask
+                from a binomial distribution. Defaults to 'fixed'. In 'stochastic' mode, 'fraction_to_mask'
+                is treated as the probability of masking a token in the binomial distribution.
             tokens_to_mask: A list of atoms (or amino acids) that can be considered for masking.
                 Defaults to [] meaning that all tokens can be masked. E.g., use ['F'] to
                 only mask fluorine atoms.
+            bool_context_mask: A list of booleans that can be used to mask specific tokens.
             substructures_to_mask: Specifies a list of substructures that should be masked.
                 Given in SMILES format. This is excluded from the stochastic masking.
                 NOTE: The model operates on SELFIES and the matching of the substructures occurs
@@ -706,11 +717,17 @@ class ConditionalGenerator:
             raise ValueError(
                 f"The fraction_to_mask {fraction_to_mask} has to be between 0 and 1."
             )
+        
+        self.masking_strategy = masking_strategy
         self.fraction_to_mask = fraction_to_mask
 
         if not isinstance(tokens_to_mask, list):
             raise TypeError(f"The tokens_to_mask {tokens_to_mask} has to be a list.")
         self.maskable_tokens = self.get_maskable_tokens(tokens_to_mask.copy())
+
+        if bool_context_mask is not None:
+            assert len(bool_context_mask) == len(context)
+            self.bool_context_mask = bool_context_mask
 
         found_maskable = list(filter(lambda x: x in context, tokens_to_mask))
         if len(found_maskable) == 0 and tokens_to_mask != []:
@@ -760,6 +777,10 @@ class ConditionalGenerator:
         )
         maskable_idxs = [i for i, t in enumerate(tokens) if t in maskable_tokens]
 
+        # if the user provides a custom boolean mask, we use it instead of the maskable_idxs
+        if self.bool_context_mask is not None:
+            maskable_idxs = [i for i in range(len(tokens)) if self.bool_context_mask[i]]
+
         # Make sure that `substructures_to_keep` are not masked
         for keep in self.substructures_to_keep:
             keep_toks = self.tokenizer.text_tokenizer.tokenize(
@@ -768,7 +789,12 @@ class ConditionalGenerator:
             to_be_kept = get_substructure_indices(tokens, keep_toks)
             maskable_idxs = list(filter(lambda x: x not in to_be_kept, maskable_idxs))
 
-        num_to_mask = round(len(maskable_idxs) * self.fraction_to_mask)
+        if self.masking_strategy == "fixed":
+            num_to_mask = round(len(maskable_idxs) * self.fraction_to_mask)
+        else:
+            num_to_mask = np.random.binomial(len(maskable_idxs), self.fraction_to_mask)
+            num_to_mask = max(1, num_to_mask)   # to test with and without this min
+        
         # Mask the tokens
         mask_idxs = np.random.choice(maskable_idxs, num_to_mask, replace=False)
         sequence_tokens = [
@@ -1173,8 +1199,8 @@ class ProteinLanguageRT(ConditionalGenerator):
             tolerance: the tolerance for the property of the generated molecules.
                 Given in percent. Defaults to 20.0.
             sampling_wrapper: A high-level entry point that allows specifying a seed
-                SMILES alongside some target conditions.
-                NOTE: If this is used, the `target` needs to be a single SMILES string.
+                AAS alongside some target conditions.
+                NOTE: If this is used, the `target` needs to be a single AAS string.
                 Example: {
                     'fraction_to_mask': 0.5,
                     'tokens_to_mask': [],

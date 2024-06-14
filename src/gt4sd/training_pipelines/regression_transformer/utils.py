@@ -219,6 +219,7 @@ def get_train_config_dict(
         "reset_training_loss": True,
         "cg_collator": training_args["cg_collator"],
         "cc_loss": training_args["cc_loss"],
+        "cc_loss_weight": training_args["cc_loss_weight"],
         "property_tokens": list(properties),
         "cg_collator_params": {
             "do_sample": False,

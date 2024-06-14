@@ -89,6 +89,13 @@ class RegressionTransformerTrainingArguments(
             "generation task. Defaults to False."
         },
     )
+    cc_loss_weight: float = field(
+        default=1.0,
+        metadata={
+            "help": "Weight of the cycle-consistency loss. Only applies if `cc_loss` is True. "
+            "Defaults to 1.0."
+        },
+    )
     cg_collator: str = field(
         default="vanilla_cg",
         metadata={
@@ -122,6 +129,10 @@ class RegressionTransformerTrainingArguments(
             "the collator behaves like the `vanilla_cg ` even though it is a `multientity_cg`. If False, the exact behavior "
             "depends on the entity_to_mask argument. Defaults to False."
         },
+    )
+    dry_run: bool = field(
+        default=False,
+        metadata={ "help": "Whether to run the training in dry-run mode." },
     )
 
 

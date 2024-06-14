@@ -78,6 +78,9 @@ class RegressionTransformerTrainingPipeline(TrainingPipeline):
             model_args: model arguments passed to the configuration.
             dataset_args: dataset arguments passed to the configuration.
         """
+        if training_args['dry_run']:
+            os.environ["WANDB_MODE"] = "disabled"
+
         try:
             params = {**training_args, **dataset_args, **model_args}
             # Setup logging
@@ -165,7 +168,8 @@ class RegressionTransformerTrainingPipeline(TrainingPipeline):
 
             custom_trainer_params = get_trainer_dict(self.model_params)
             hf_train_object = get_hf_training_arg_object(training_args)
-
+            hf_train_object.report_to = ["wandb"]
+            
             trainer = CustomTrainer(
                 model=self.model,
                 args=hf_train_object,
