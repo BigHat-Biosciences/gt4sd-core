@@ -500,8 +500,10 @@ class ConditionalGenerator:
 
         # Forward pass
         outputs = self.model(map_tensor_dict(inputs, self.device))
+
         # Obtain model predictions via the search method
         predictions = self.search(outputs["logits"].detach()).cpu()
+        
         # Combine predictions with the static part to obtain the full sequences
         generations = input_ids.cpu()
         generations[generations == self.tokenizer.mask_token_id] = predictions[
@@ -649,6 +651,7 @@ class ConditionalGenerator:
         fraction_to_mask: float = 0.2,
         masking_strategy: str = "fixed",
         tokens_to_mask: List = [],
+        allowed_sampling_tokens: List = [],
         bool_context_mask: Optional[List[bool]] = None,
         substructures_to_mask: List[str] = [],
         substructures_to_keep: List[str] = [],
@@ -676,6 +679,8 @@ class ConditionalGenerator:
             tokens_to_mask: A list of atoms (or amino acids) that can be considered for masking.
                 Defaults to [] meaning that all tokens can be masked. E.g., use ['F'] to
                 only mask fluorine atoms.
+            allowed_sampling_tokens: A list of raw tokens that should be considered for sampling. We only want to
+                sample tokens from this list. Defaults to [] meaning that all tokens can be sampled.
             bool_context_mask: A list of booleans that can be used to mask specific tokens.
             substructures_to_mask: Specifies a list of substructures that should be masked.
                 Given in SMILES format. This is excluded from the stochastic masking.
@@ -700,6 +705,7 @@ class ConditionalGenerator:
             self.validate_input_molecule(context, MoleculeFormat.smiles)
 
         self.seed_molecule = context
+        self.allowed_sampling_tokens = allowed_sampling_tokens
 
         if property_goal == {}:
             raise ValueError("Please specify the target properties with a dictionary.")
@@ -1228,7 +1234,16 @@ class ProteinLanguageRT(ConditionalGenerator):
             logger.warning("For generation task, sample search is recommended")
         if search not in SEARCH_FACTORY.keys():
             raise KeyError(f"Pick a search of {SEARCH_FACTORY.keys()} not: {search}.")
-        self.search = SEARCH_FACTORY[search](temperature=temperature)
+
+        sampling_mask = sampling_wrapper.get("allowed_sampling_tokens", None)
+        if sampling_mask is not None:
+            mask = torch.zeros(self.tokenizer.vocab_size, dtype=torch.bool, device=self.device)
+            full_vocab = self.tokenizer.get_vocab()
+            masking_idx = [full_vocab[t] for t in sampling_mask]
+            mask[masking_idx] = True
+            sampling_mask = mask
+        
+        self.search = SEARCH_FACTORY[search](temperature=temperature, mask=sampling_mask)
 
         # Based on task, set the correct generate_batch method
         if self.task == "regression":
