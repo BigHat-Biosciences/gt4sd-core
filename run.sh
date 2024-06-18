@@ -2,15 +2,18 @@
 
 ## Use this script to launch training jobs in the background
 
-JOB_NAME="finetune_boman_pt_on_10ct_tm"
+# JOB_NAME="finetune_boman_pt_on_3ct_tm"
+JOB_NAME="finetune_10ct_display_on_cfps_tm_long"
 
 DATA_ROOT_DIR="/home/ec2-user/other/slu/projects/bh-experimental/wizard_hat/conditional_plm/res/datasets/rt"
-DATA_JOB_DIR="${DATA_ROOT_DIR}/capulet_382_10ct_random_mut_hsa-display-ml_helper-tm-otf-0_0/"
+# DATA_JOB_DIR="${DATA_ROOT_DIR}/capulet_382_3ct_random_mut_hsa-display-ml_helper-tm-otf-0_0/"
+DATA_JOB_DIR="${DATA_ROOT_DIR}/capulet-vhh-capulet_new-qc-thermostability-ml-sequences-0_21/"
 
 OUTPUT_ROOT_DIR="/home/ec2-user/other/slu/projects/bh-experimental/wizard_hat/conditional_plm/res/experiments/rt"
 OUTPUT_DIR="${OUTPUT_ROOT_DIR}/${JOB_NAME}"
 
-PRETRAINED_MODEL_PATH="/home/ec2-user/other/slu/.gt4sd/algorithms/conditional_generation/RegressionTransformer/RegressionTransformerProteins/stability/"
+# PRETRAINED_MODEL_PATH="/home/ec2-user/other/slu/.gt4sd/algorithms/conditional_generation/RegressionTransformer/RegressionTransformerProteins/stability/"
+PRETRAINED_MODEL_PATH="/home/ec2-user/other/slu/projects/bh-experimental/wizard_hat/conditional_plm/res/experiments/rt/finetune_10ct_display_on_cfps_tm/checkpoint-pearson-max-20000/"
 
 # Finetuning job
 gt4sd-trainer \
@@ -34,4 +37,6 @@ gt4sd-trainer \
 	--cc_loss_weight 1 \
 	--save_total_limit 2 \
 	--save_steps 0 \
-	--num_train_epochs 5
+	--num_train_epochs 100 \
+	--augment 5 \
+	# --dry_run
